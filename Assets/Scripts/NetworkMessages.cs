@@ -27,10 +27,11 @@ namespace NetworkMessages
     
     [System.Serializable]
     public class PlayerUpdateMsg:NetworkHeader{
-        public NetworkObjects.NetworkPlayer player;
+        public NetworkObjects.ListOfNetworkPlayers player;
         public PlayerUpdateMsg(){      // Constructor
             cmd = Commands.PLAYER_UPDATE;
-            player = new NetworkObjects.NetworkPlayer();
+            //player = new NetworkObjects.NetworkPlayer();
+            player = new NetworkObjects.ListOfNetworkPlayers();
         }
     };
 
@@ -38,7 +39,7 @@ namespace NetworkMessages
         public Input myInput;
         public PlayerInputMsg(){
             cmd = Commands.PLAYER_INPUT;
-            myInput = new Input();
+             myInput = new Input();
         }
     }
     [System.Serializable]
@@ -64,6 +65,16 @@ namespace NetworkObjects
 
         public NetworkPlayer(){
             cubeColor = new Color();
+        }
+    }
+    [System.Serializable]
+    public class ListOfNetworkPlayers : NetworkPlayer
+    {
+        public NetworkPlayer[] players;
+
+        public ListOfNetworkPlayers()
+        {
+            players = new NetworkPlayer[16];
         }
     }
 }

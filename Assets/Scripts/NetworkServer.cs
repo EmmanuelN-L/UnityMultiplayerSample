@@ -5,12 +5,15 @@ using Unity.Networking.Transport;
 using NetworkMessages;
 using System;
 using System.Text;
+using System.Collections.Generic;
+using Random = UnityEngine.Random;
 
 public class NetworkServer : MonoBehaviour
 {
     public NetworkDriver m_Driver;
     public ushort serverPort;
     private NativeList<NetworkConnection> m_Connections;
+    //public List<>;
 
     void Start ()
     {
@@ -36,15 +39,50 @@ public class NetworkServer : MonoBehaviour
         m_Driver.Dispose();
         m_Connections.Dispose();
     }
+    void GameLoop(NetworkConnection c)
+    {
+        while (true)
+        {
+            Debug.Log("Boop");
 
+            PlayerUpdateMsg p_UpdateMsg = new PlayerUpdateMsg();
+           
+            for (int i = 0; i < p_UpdateMsg.player.players.Length; i++)
+            {
+                p_UpdateMsg.player.cubeColor.r = Random.Range(0, 1);
+                p_UpdateMsg.player.cubeColor.g = Random.Range(0, 1);
+                p_UpdateMsg.player.cubeColor.b = Random.Range(0, 1);
+
+                SendToClient(JsonUtility.ToJson(p_UpdateMsg), c);
+            }
+        }
+                
+
+    }
     void OnConnect(NetworkConnection c){
         m_Connections.Add(c);
         Debug.Log("Accepted a connection");
 
+        ServerUpdateMsg s_UpdateMessage = new ServerUpdateMsg();
+        for (int i = 0; i < 1; i++)
+        {
+            NetworkObjects.NetworkPlayer tempID = new NetworkObjects.NetworkPlayer();
+            tempID.id = c.InternalId.ToString();
+            s_UpdateMessage.players.Add(tempID);
+        }
+
+        Debug.Log("Got This -> " + s_UpdateMessage.players[0].id);
+        //suM.playerlist.players = c.InternalId.ToString();
+
+        SendToClient(JsonUtility.ToJson(s_UpdateMessage), c);
+
         //// Example to send a handshake message:
-        // HandshakeMsg m = new HandshakeMsg();
-        // m.player.id = c.InternalId.ToString();
-        // SendToClient(JsonUtility.ToJson(m),c);        
+        HandshakeMsg m = new HandshakeMsg();
+        m.player.id = c.InternalId.ToString();
+        SendToClient(JsonUtility.ToJson(m), c);
+        //m.player.cubeColor.r = 5;
+        //m.player.cubeColor.g = 5;
+        //m.player.cubeColor.b = 5;
     }
 
     void OnData(DataStreamReader stream, int i){
@@ -66,6 +104,10 @@ public class NetworkServer : MonoBehaviour
             ServerUpdateMsg suMsg = JsonUtility.FromJson<ServerUpdateMsg>(recMsg);
             Debug.Log("Server update message received!");
             break;
+            //case Commands.PLAYER_INPUT:
+            //PlayerInputMsg pInput = JsonUtility.FromJson<PlayerInputMsg>(recMsg);
+            //Debug.Log("Received Input"+ pInput);
+            //break;
             default:
             Debug.Log("SERVER ERROR: Unrecognized message received!");
             break;
@@ -76,6 +118,8 @@ public class NetworkServer : MonoBehaviour
         Debug.Log("Client disconnected from server");
         m_Connections[i] = default(NetworkConnection);
     }
+
+
 
     void Update ()
     {
@@ -108,7 +152,7 @@ public class NetworkServer : MonoBehaviour
         for (int i = 0; i < m_Connections.Length; i++)
         {
             Assert.IsTrue(m_Connections[i].IsCreated);
-            
+
             NetworkEvent.Type cmd;
             cmd = m_Driver.PopEventForConnection(m_Connections[i], out stream);
             while (cmd != NetworkEvent.Type.Empty)
@@ -124,6 +168,7 @@ public class NetworkServer : MonoBehaviour
 
                 cmd = m_Driver.PopEventForConnection(m_Connections[i], out stream);
             }
+             
         }
     }
 }
