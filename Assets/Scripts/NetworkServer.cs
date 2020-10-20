@@ -13,6 +13,11 @@ public class NetworkServer : MonoBehaviour
     public NetworkDriver m_Driver;
     public ushort serverPort;
     private NativeList<NetworkConnection> m_Connections;
+
+    public PlayerUpdateMsg playerInfo = new PlayerUpdateMsg();
+    public GameUpdateMsg playerList = new GameUpdateMsg();
+    public GameUpdateMsg playerUpdateInfo = new GameUpdateMsg();
+
     //public List<>;
 
     void Start ()
@@ -34,55 +39,11 @@ public class NetworkServer : MonoBehaviour
         writer.WriteBytes(bytes);
         m_Driver.EndSend(writer);
     }
+
     public void OnDestroy()
     {
         m_Driver.Dispose();
         m_Connections.Dispose();
-    }
-    void GameLoop(NetworkConnection c)
-    {
-        while (true)
-        {
-            Debug.Log("Boop");
-
-            PlayerUpdateMsg p_UpdateMsg = new PlayerUpdateMsg();
-           
-            for (int i = 0; i < p_UpdateMsg.player.players.Length; i++)
-            {
-                p_UpdateMsg.player.cubeColor.r = Random.Range(0, 1);
-                p_UpdateMsg.player.cubeColor.g = Random.Range(0, 1);
-                p_UpdateMsg.player.cubeColor.b = Random.Range(0, 1);
-
-                SendToClient(JsonUtility.ToJson(p_UpdateMsg), c);
-            }
-        }
-                
-
-    }
-    void OnConnect(NetworkConnection c){
-        m_Connections.Add(c);
-        Debug.Log("Accepted a connection");
-
-        ServerUpdateMsg s_UpdateMessage = new ServerUpdateMsg();
-        for (int i = 0; i < 1; i++)
-        {
-            NetworkObjects.NetworkPlayer tempID = new NetworkObjects.NetworkPlayer();
-            tempID.id = c.InternalId.ToString();
-            s_UpdateMessage.players.Add(tempID);
-        }
-
-        Debug.Log("Got This -> " + s_UpdateMessage.players[0].id);
-        //suM.playerlist.players = c.InternalId.ToString();
-
-        SendToClient(JsonUtility.ToJson(s_UpdateMessage), c);
-
-        //// Example to send a handshake message:
-        HandshakeMsg m = new HandshakeMsg();
-        m.player.id = c.InternalId.ToString();
-        SendToClient(JsonUtility.ToJson(m), c);
-        //m.player.cubeColor.r = 5;
-        //m.player.cubeColor.g = 5;
-        //m.player.cubeColor.b = 5;
     }
 
     void OnData(DataStreamReader stream, int i){
@@ -93,12 +54,24 @@ public class NetworkServer : MonoBehaviour
 
         switch(header.cmd){
             case Commands.HANDSHAKE:
-            HandshakeMsg hsMsg = JsonUtility.FromJson<HandshakeMsg>(recMsg);
+            HandshakeMsg hs_Msg = JsonUtility.FromJson<HandshakeMsg>(recMsg);
             Debug.Log("Handshake message received!");
             break;
+            //Receiving the player update positions and ID
             case Commands.PLAYER_UPDATE:
-            PlayerUpdateMsg puMsg = JsonUtility.FromJson<PlayerUpdateMsg>(recMsg);
+            playerInfo= JsonUtility.FromJson<PlayerUpdateMsg>(recMsg);
             Debug.Log("Player update message received!");
+
+            for (i = 0; i < playerList.GameUpdate.Count; i++)
+            {
+                if (playerInfo.player.id == playerList.GameUpdate[i].id)
+                {
+                    //Adding updated infor and removing the old
+                    //Not sure if it's the most efficient but it works
+                    playerList.GameUpdate.Insert(i, playerInfo.player);
+                    playerList.GameUpdate.RemoveAt(i + 1);  
+                }
+            }
             break;
             case Commands.SERVER_UPDATE:
             ServerUpdateMsg suMsg = JsonUtility.FromJson<ServerUpdateMsg>(recMsg);
@@ -112,14 +85,97 @@ public class NetworkServer : MonoBehaviour
             Debug.Log("SERVER ERROR: Unrecognized message received!");
             break;
         }
-    }
+    }  
+    void OnConnect(NetworkConnection c){
+        m_Connections.Add(c);
+        Debug.Log("Accepted a connection");
 
+        //ServerUpdateMsg s_UpdateMessage = new ServerUpdateMsg();
+        //for (int i = 0; i < 1; i++)
+        //{
+            
+        //    tempID.id = c.InternalId.ToString();
+        //    s_UpdateMessage.players.Add(tempID);
+        //}
+        
+       // NetworkObjects.NetworkPlayer fakeID = new NetworkObjects.NetworkPlayer();
+
+
+        NetworkObjects.NetworkPlayer realId = new NetworkObjects.NetworkPlayer();
+        //Setting the players ID. E.g. Player 1 ID = 0
+        realId.id = c.InternalId.ToString(); 
+        //realId.cubeColor = playerData.player.cubeColor;
+        realId.cubPos = playerInfo.player.cubPos;
+        //Adding player ID to the player list
+        playerList.GameUpdate.Add(realId);
+        //Sending it to the client for a updated list
+        SendToClient(JsonUtility.ToJson(playerList), c);
+
+        //Sending the player their own internalID so they have a reference
+        ConnectionAcceptedMsg ca_Msg = new ConnectionAcceptedMsg();
+        NetworkObjects.NetworkPlayer connectID = new NetworkObjects.NetworkPlayer();
+        connectID.id = c.InternalId.ToString();
+        ca_Msg.player.Add(connectID);
+        SendToClient(JsonUtility.ToJson(ca_Msg), c);
+        
+        //Sending the player a list of currently connected users
+        ServerUpdateMsg suM = new ServerUpdateMsg();
+        //Looping through all currently connected users
+        //fakeId was was just for fun
+        for (int i = 0; i < m_Connections.Length; i++)
+        {
+            NetworkObjects.NetworkPlayer fakeId = new NetworkObjects.NetworkPlayer();
+            fakeId.id = playerList.GameUpdate[i].id;
+            suM.players.Add(fakeId);
+        }
+        SendToClient(JsonUtility.ToJson(suM), c);
+
+        // This is essentially a player joined message so now every client is aware of the new one who joined
+        HandshakeMsg hs_Msg = new HandshakeMsg();
+        for (int i = 0; i < m_Connections.Length; i++)
+        {
+            if (c.InternalId.ToString() != playerList.GameUpdate[i].id)
+            {
+                realId.id = c.InternalId.ToString();
+                hs_Msg.player.Add(realId);
+                SendToClient(JsonUtility.ToJson(hs_Msg), m_Connections[i]);
+            }
+        }
+
+        //This is some stuff I had before but i've upgraded the code
+
+        //Debug.Log("Got This -> " + s_UpdateMessage.players[0].id);
+        //suM.playerlist.players = c.InternalId.ToString();
+
+        //SendToClient(JsonUtility.ToJson(s_UpdateMessage), c);
+
+        ////// Example to send a handshake message:
+        //HandshakeMsg m = new HandshakeMsg();
+        //m.player.id = c.InternalId.ToString();
+        //SendToClient(JsonUtility.ToJson(m), c);
+        ////m.player.cubeColor.r = 5;
+        ////m.player.cubeColor.g = 5;
+        ////m.player.cubeColor.b = 5;
+    }
+    void UpdatePlayers()
+    {
+        //Since we're using a list to store the data(pos, id, color) we add the updated date from each client and send it back to everyone in he server
+        //Figuring out how to to add and remove was new to me because I didn't have much experience with lists
+        //At first I tried using an array and... found out Arrays actually suck atleast for this because resizing isn't really a thing
+
+        for (int i = 0; i < m_Connections.Length; i++)
+        {
+            playerUpdateInfo.GameUpdate.Insert(i, playerList.GameUpdate[i]);
+            playerUpdateInfo.GameUpdate.RemoveAt(i + 1);
+
+            SendToClient(JsonUtility.ToJson(playerUpdateInfo), m_Connections[i]);
+        }
+    }
+    //Wasn't reall able to figure out the disconnect implementation
     void OnDisconnect(int i){
         Debug.Log("Client disconnected from server");
         m_Connections[i] = default(NetworkConnection);
     }
-
-
 
     void Update ()
     {
@@ -170,5 +226,6 @@ public class NetworkServer : MonoBehaviour
             }
              
         }
+        UpdatePlayers();
     }
 }

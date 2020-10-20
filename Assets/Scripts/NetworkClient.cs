@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Networking.Transport;
 using NetworkMessages;
-using NetworkObjects;
-using System;
 using System.Text;
 
 public class NetworkClient : MonoBehaviour
@@ -19,11 +17,9 @@ public class NetworkClient : MonoBehaviour
     public string myAddress; // my address = (IP, PORT)
     public Dictionary<string, GameObject> currentPlayers; // A list of currently connected players
     public List<string> newPlayers, droppedPlayers; // a list of new players, and a list of dropped players
-    public PlayerUpdateMsg latestGameState; // the last game state received from server
+    public GameUpdateMsg latestGameState; // the last game state received from server
     public ServerUpdateMsg initialSetofPlayers; // initial set of players to spawn
     //bool p_test = true; 
-
-
     void Start()
     {
         newPlayers = new List<string>();
@@ -43,6 +39,51 @@ public class NetworkClient : MonoBehaviour
         NativeArray<byte> bytes = new NativeArray<byte>(Encoding.ASCII.GetBytes(message), Allocator.Temp);
         writer.WriteBytes(bytes);
         m_Driver.EndSend(writer);
+    } 
+    void OnData(DataStreamReader stream)
+    {
+        NativeArray<byte> bytes = new NativeArray<byte>(stream.Length, Allocator.Temp);
+        stream.ReadBytes(bytes);
+        string recMsg = Encoding.ASCII.GetString(bytes.ToArray());
+        NetworkHeader header = JsonUtility.FromJson<NetworkHeader>(recMsg);
+
+        switch (header.cmd)
+        {
+            case Commands.HANDSHAKE: //Will be used for sending every other player data 
+                HandshakeMsg hs_Msg = JsonUtility.FromJson<HandshakeMsg>(recMsg);
+                Debug.Log("Handshake message received!");
+                foreach (NetworkObjects.NetworkPlayer player in hs_Msg.player)
+                {
+                    newPlayers.Add(player.id);
+                }
+                break;
+            case Commands.GAME_UPDATE:
+                latestGameState  = JsonUtility.FromJson<GameUpdateMsg>(recMsg);
+                Debug.Log("Game Update message received!"); 
+                break;
+            //case Commands.PLAYER_UPDATE://Never used player update probably could've but decided to make my own commands
+            //    PlayerUpdateMsg pu_Msg = JsonUtility.FromJson<PlayerUpdateMsg>(recMsg);
+            //    Debug.Log("Player update message received!");
+            //    break;
+            case Commands.CONNECTION_ACCEPTED: //This will be used for your own data
+                ConnectionAcceptedMsg ca_Msg = JsonUtility.FromJson<ConnectionAcceptedMsg>(recMsg);
+                Debug.Log("Connection Approved message received!");
+                foreach (NetworkObjects.NetworkPlayer playerData in ca_Msg.player)
+                {
+                    Debug.Log("Position X: " + playerData.cubPos.x + " Position Y: " + playerData.cubPos.y + " Position Z: " + playerData.cubPos.z);
+                    newPlayers.Add(playerData.id);
+                    myAddress = playerData.id;
+                }
+                break;
+            case Commands.SERVER_UPDATE://Sets the player list
+               initialSetofPlayers = JsonUtility.FromJson<ServerUpdateMsg>(recMsg);
+                Debug.Log("Server update message received!");
+                //Debug.Log("PlayerList: " + initialSetofPlayers.players[0].id);
+                break;
+            default:
+                Debug.Log("Unrecognized message received!");
+                break;
+        }
     }
 
     void OnConnect()
@@ -50,9 +91,9 @@ public class NetworkClient : MonoBehaviour
         Debug.Log("We are now connected to the server");
 
         //// Example to send a handshake message:
-        HandshakeMsg m = new HandshakeMsg();
-        m.player.id = m_Connection.InternalId.ToString();
-        SendToServer(JsonUtility.ToJson(m));
+        //HandshakeMsg m = new HandshakeMsg();
+        //m.player.id = m_Connection.InternalId.ToString();
+        //SendToServer(JsonUtility.ToJson(m));
     } 
     void SpawnPlayers()
     {
@@ -78,7 +119,6 @@ public class NetworkClient : MonoBehaviour
                 if (player.id == myAddress)
                     continue;
                 currentPlayers.Add(player.id, Instantiate(playerGO, new Vector3(0, 0, 0), Quaternion.identity));
-                currentPlayers[player.id].GetComponent<Renderer>().material.color = new Color(player.cubeColor.r, player.cubeColor.g, player.cubeColor.b);
                 currentPlayers[player.id].name = player.id;
 
             }
@@ -88,9 +128,9 @@ public class NetworkClient : MonoBehaviour
 
     void UpdatePlayers()
     {
-        if (latestGameState.player.players.Length > 0)
+        if (latestGameState.GameUpdate.Count > 0)
         {
-            foreach (NetworkObjects.NetworkPlayer player in latestGameState.player.players)
+            foreach (NetworkObjects.NetworkPlayer player in latestGameState.GameUpdate)
             {
                 string playerID = player.id;
                 //No more disco cube
@@ -102,21 +142,24 @@ public class NetworkClient : MonoBehaviour
                 }
             }
             //Sending the server information of our cubes position so that they can update other cubes of our location. Pretty cool man!
-            foreach (NetworkObjects.NetworkPlayer player in latestGameState.player.players)
+            foreach (NetworkObjects.NetworkPlayer player in latestGameState.GameUpdate)
             {
                 if (player.id == myAddress)
                 {    //Getting the transform of the players cube to send to server 
-                    LocalPositionData playerLocalPosition = new LocalPositionData();
-                    playerLocalPosition.localPos.x = currentPlayers[player.id].GetComponent<Transform>().position.x;
-                    playerLocalPosition.localPos.y = currentPlayers[player.id].GetComponent<Transform>().position.y;
-                    playerLocalPosition.localPos.z = currentPlayers[player.id].GetComponent<Transform>().position.z;
+                    PlayerUpdateMsg playerLocalPosition = new PlayerUpdateMsg();
+                    playerLocalPosition.player.id = player.id;
+                    playerLocalPosition.player.cubPos.x = currentPlayers[player.id].GetComponent<Transform>().position.x;
+                    playerLocalPosition.player.cubPos.y = currentPlayers[player.id].GetComponent<Transform>().position.y;
+                    playerLocalPosition.player.cubPos.z = currentPlayers[player.id].GetComponent<Transform>().position.z;
                     //Making the position into a json and sending it to the server
-                    string positionBytes = JsonUtility.ToJson(playerLocalPosition);
-                    Byte[] sendingPositionBytes = Encoding.UTF8.GetBytes(positionBytes);
-                    udp.Send(sendingPositionBytes, sendingPositionBytes.Length);
+                    //string positionBytes = JsonUtility.ToJson(playerLocalPosition);
+                    //Byte[] sendingPositionBytes = Encoding.UTF8.GetBytes(positionBytes);
+                    //udp.Send(sendingPositionBytes, sendingPositionBytes.Length);
+                    SendToServer(JsonUtility.ToJson(playerLocalPosition));
+
                 }
             }
-            latestGameState.player.players = new [0];
+            latestGameState.GameUpdate = new List<NetworkObjects.NetworkPlayer>();
         }
     }
 
@@ -132,37 +175,8 @@ public class NetworkClient : MonoBehaviour
     //    SendToServer(JsonUtility.ToJson(m));
     //}
 
-    void OnData(DataStreamReader stream)
-    {
-        NativeArray<byte> bytes = new NativeArray<byte>(stream.Length, Allocator.Temp);
-        stream.ReadBytes(bytes);
-        string recMsg = Encoding.ASCII.GetString(bytes.ToArray());
-        NetworkHeader header = JsonUtility.FromJson<NetworkHeader>(recMsg);
-
-        switch (header.cmd)
-        {
-            case Commands.HANDSHAKE:
-                HandshakeMsg hsMsg = JsonUtility.FromJson<HandshakeMsg>(recMsg);
-                newPlayers.Add(hsMsg.player.id);
-                myAddress = hsMsg.player.id;
-                break;
-            case Commands.PLAYER_UPDATE:
-                //PlayerUpdateMsg puMsg = JsonUtility.FromJson<PlayerUpdateMsg>(recMsg);
-                latestGameState = JsonUtility.FromJson<PlayerUpdateMsg>(recMsg);
-                
-                Debug.Log("Player update message received!");
-                break;
-            case Commands.SERVER_UPDATE:
-               initialSetofPlayers = JsonUtility.FromJson<ServerUpdateMsg>(recMsg);
-                Debug.Log("Server update message received!");
-                Debug.Log("PlayerList: " + initialSetofPlayers.players[0].id);
-                break;
-            default:
-                Debug.Log("Unrecognized message received!");
-                break;
-        }
-    }
-
+   
+    //Didn;t use disconnect sorry
     void Disconnect()
     {
         m_Connection.Disconnect(m_Driver);
@@ -214,65 +228,67 @@ public class NetworkClient : MonoBehaviour
         }
 
         SpawnPlayers();
+        UpdatePlayers();
     }
-    [Serializable]
-    public struct receivedColor
-    {
-        public float R;
-        public float G;
-        public float B;
-    }
+    //Thought I needed all this but this is a different system
+    //[Serializable]
+    //public struct receivedColor
+    //{
+    //    public float R;
+    //    public float G;
+    //    public float B;
+    //}
 
-    //Struct with variables to hold other players positions 
-    [Serializable]
-    public struct otherPlayerPosition
-    {
-        public float x;
-        public float y;
-        public float z; //Not using the z axis but including it for practice
-    }
-    //Struct for sending position to server
-    [Serializable]
-    public struct sentLocalPos
-    {
-        public float x;
-        public float y;
-        public float z;//Not using the z axis but including it for practice
-    }
+    ////Struct with variables to hold other players positions 
+    //[Serializable]
+    //public struct otherPlayerPosition
+    //{
+    //    public float x;
+    //    public float y;
+    //    public float z; //Not using the z axis but including it for practice
+    //}
+    ////Struct for sending position to server
+    //[Serializable]
+    //public struct sentLocalPos
+    //{
+    //    public float x;
+    //    public float y;
+    //    public float z;//Not using the z axis but including it for practice
+    //}
 
-    [Serializable]
-    public class LocalPositionData
-    {
+    //[Serializable]
+    //public class LocalPositionData
+    //{
 
-        public sentLocalPos localPos;
+    //    public sentLocalPos localPos;
 
-    }
-    /// <summary>
-    /// A structure that replicates our player dictionary on server
-    /// </summary>
-    [Serializable]
-    public class Player
-    {
-        public string id;
-        public receivedColor color;
-        public otherPlayerPosition pos;
+    //}
+    ///// <summary>
+    ///// A structure that replicates our player dictionary on server
+    ///// </summary>
+    //[Serializable]
+    //public class Player
+    //{
+    //    public string id;
+    //    public receivedColor color;
+    //    public otherPlayerPosition pos;
 
-    }
+    //}
 
-    [Serializable]
-    public class ListOfPlayers
-    {
-        public Player[] players;
+    //[Serializable]
+    //public class ListOfPlayers
+    //{
+    //    public Player[] players;
 
-        public ListOfPlayers()
-        {
-            players = new Player[0];
-        }
-    }
-    [Serializable]
-    public class GameState
-    {
-        public int pktID;
-        public Player[] players;
-    }
+    //    public ListOfPlayers()
+    //    {
+    //        players = new Player[0];
+    //    }
+    //}
+    //[Serializable]
+    //public class GameState
+    //{
+    //    public int pktID;
+    //    public Player[] players;
+    //}
 }

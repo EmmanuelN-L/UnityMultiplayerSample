@@ -8,30 +8,52 @@ namespace NetworkMessages
         PLAYER_UPDATE,
         SERVER_UPDATE,
         HANDSHAKE,
-        PLAYER_INPUT
+        PLAYER_INPUT,
+        CONNECTION_ACCEPTED,
+        GAME_UPDATE,
+
     }
 
     [System.Serializable]
     public class NetworkHeader{
         public Commands cmd;
     }
-
     [System.Serializable]
     public class HandshakeMsg:NetworkHeader{
-        public NetworkObjects.NetworkPlayer player;
+        public List<NetworkObjects.NetworkPlayer> player;
         public HandshakeMsg(){      // Constructor
             cmd = Commands.HANDSHAKE;
-            player = new NetworkObjects.NetworkPlayer();
+            player = new List<NetworkObjects.NetworkPlayer>();
         }
     }
-    
+    //Added this to update your players position
+    [System.Serializable]
+    public class ConnectionAcceptedMsg : NetworkHeader
+    {
+        public List<NetworkObjects.NetworkPlayer> player;
+        public ConnectionAcceptedMsg()
+        {      // Constructor
+            cmd = Commands.CONNECTION_ACCEPTED;
+            player = new List<NetworkObjects.NetworkPlayer>();
+        }
+    }
+    [System.Serializable]
+    public class GameUpdateMsg : NetworkHeader
+    {
+        public List<NetworkObjects.NetworkPlayer> GameUpdate;
+        public GameUpdateMsg()
+        {      // Constructor
+            cmd = Commands.GAME_UPDATE;
+            GameUpdate = new List<NetworkObjects.NetworkPlayer>();
+        }
+    };
+
     [System.Serializable]
     public class PlayerUpdateMsg:NetworkHeader{
-        public NetworkObjects.ListOfNetworkPlayers player;
+        public NetworkObjects.NetworkPlayer player;
         public PlayerUpdateMsg(){      // Constructor
             cmd = Commands.PLAYER_UPDATE;
-            //player = new NetworkObjects.NetworkPlayer();
-            player = new NetworkObjects.ListOfNetworkPlayers();
+            player = new NetworkObjects.NetworkPlayer();
         }
     };
 
@@ -50,31 +72,25 @@ namespace NetworkMessages
             players = new List<NetworkObjects.NetworkPlayer>();
         }
     }
-} 
+}
 
 namespace NetworkObjects
-{
+{ 
+    //Easier to have them all in one
+    //Wasn't feeling the cube changing colour hope thats okay
     [System.Serializable]
-    public class NetworkObject{
+    public class NetworkPlayer
+    {
         public string id;
-    }
-    [System.Serializable]
-    public class NetworkPlayer : NetworkObject{
-        public Color cubeColor;
+        //public Color cubeColor;
         public Vector3 cubPos;
 
-        public NetworkPlayer(){
-            cubeColor = new Color();
-        }
-    }
-    [System.Serializable]
-    public class ListOfNetworkPlayers : NetworkPlayer
-    {
-        public NetworkPlayer[] players;
-
-        public ListOfNetworkPlayers()
+        public NetworkPlayer()
         {
-            players = new NetworkPlayer[16];
+            //cubeColor = new Color();
+            cubPos = new Vector3();
         }
     }
 }
+
+
